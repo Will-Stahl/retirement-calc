@@ -1,64 +1,130 @@
+const tableRows = {
+  total: "Total",
+  yearlyContrib: "Yearly Contribution",
+  monthlyContrib: "Monthly Contribution",
+  totalContrib: "Total Contribution (Personal)",
+  initialInterest: "Interest at start of retirement",
+  runoutAge: "Age at account exhaustion",
+  comparison: "Total Savings Ratio (Roth/Trad)"
+}
+
+function initTable() {
+  let tble = document.getElementById('principle-table');
+  const ids = Object.keys(tableRows);
+  for (let id of ids) {
+    let row = document.createElement('tr');
+    row.id = id;
+    let rowLabel = document.createElement('td');
+    rowLabel.innerHTML = tableRows[id];
+    row.appendChild(rowLabel);
+    for (let i = 0; i < 2; i++) {
+      row.appendChild(document.createElement('td'));
+    }
+    tble.appendChild(row);
+  }
+}
+
 function calculate() {
-  const currAge = document.getElementById("cur-age").value;
-  const retAge = document.getElementById("retire-age").value;
-  // TODO: add expiration age, use to calculate take home withdrawals
-  // add option to calculate total savings needed for particular take home withdrawal
-  const income = document.getElementById("income").value;
-  const taxRate = 0.01 * document.getElementById("tax-rate").value;
-  const withdrawalTax = 0.01 * document.getElementById("with-rate").value;
-  const returnRate = 0.01 * document.getElementById("return-rate").value;
-  const match = 0.01 * document.getElementById("match").value;
-  const thAfterTaxContrib = document.getElementById("dtake-home").value;
-  const thWithdrawal = document.getElementById("th-withdrawal").value;
+  const par = {
+    currAge: Number(document.getElementById("cur-age").value),
+    retAge: Number(document.getElementById("retire-age").value),
+    // TODO: add expiration age
+    // add option to calculate total savings needed for particular take home withdrawal
+    income: document.getElementById("income").value,
+    taxRate: 0.01 * document.getElementById("tax-rate").value,
+    withdrawalTax: 0.01 * document.getElementById("with-rate").value,
+    returnRate: 0.01 * document.getElementById("return-rate").value,
+    match: 0.01 * document.getElementById("match").value,
+    thAfterTaxContrib: document.getElementById("dtake-home").value,
+    thWithdrawal: document.getElementById("th-withdrawal").value,
+  };
+  months = (par.retAge - par.currAge - 1) * 12;
+  maxMatch = par.match * par.income;
 
-  const months = (retAge - currAge - 1) * 12;
-  const maxMatch = match * income;
+  const stdTotal = calcAndDisplayStandard(par, months, maxMatch);
+  
+  const rothTotal = calcAndDisplayRoth(par, months, maxMatch);
 
-  // ==============================
-  // ========= total roth savings calcs:
+  setRowChildByID('comparison', 1, Number(rothTotal/stdTotal).toFixed(2));
+}
 
+function calcAndDisplayStandard(par, months, maxMatch) {
+  const contribYearly = par.income
+    - (par.thAfterTaxContrib / (1 - par.taxRate + 0.01));
+  const totalContribYearly = contribYearly +
+    ((contribYearly < maxMatch) ? contribYearly : maxMatch);
+  const contribMonthly = contribYearly / 12;
+  const totalContribMonthly = totalContribYearly / 12;
+
+  let total = totalContribMonthly;
+  for (i = 0; i < months; i++) {
+    total = (total * (1 + (par.returnRate / 12))) + totalContribMonthly;
+  }
+
+  let exhaustAge = Infinity;
+  const totalWithdrawal = par.thWithdrawal / (1 - par.withdrawalTax);
+  const initialInterest = total * par.returnRate / 12;
+  if (total * par.returnRate / 12 < totalWithdrawal) {
+    let remaining = total;
+    let retireMonths = 0;
+    while (remaining > 0) {
+      remaining = (remaining * (1 + (par.returnRate / 12))) - totalWithdrawal;
+      retireMonths++;
+    }
+    exhaustAge = (retireMonths / 12) + par.retAge;
+  }
+
+  setRowChildByID('total', 1, formatUSD(total));
+  setRowChildByID('yearlyContrib', 1, formatUSD(contribYearly));
+  setRowChildByID('monthlyContrib', 1, formatUSD(contribMonthly));
+  setRowChildByID('totalContrib', 1, formatUSD(months * contribMonthly));
+  setRowChildByID('initialInterest', 1, formatUSD(initialInterest));
+  setRowChildByID('runoutAge', 1, Number(exhaustAge).toFixed(2));
+  return total;
+
+}
+
+function calcAndDisplayRoth(par, months, maxMatch) {
   // personal contribution each year
   // calculated by desired take home pay after tax and contribution
-  const rothContribYearly = (income - (income * taxRate) - thAfterTaxContrib);
+  const contribYearly = (par.income - (par.income * par.taxRate)
+    - par.thAfterTaxContrib);
   // total yearly contribution including employer match
-  const totalRothContribYearly = rothContribYearly +
-    ((rothContribYearly < maxMatch) ? rothContribYearly : maxMatch);
+  const totalContribYearly = contribYearly +
+    ((contribYearly < maxMatch) ? contribYearly : maxMatch);
   // personal monthly contribution
-  const rothContribMonthly = rothContribYearly / 12;
+  const contribMonthly = contribYearly / 12;
   // total monthly contribution, including employer match
-  const totalRothContribMonthly = totalRothContribYearly / 12;
+  const totalContribMonthly = totalContribYearly / 12;
   
-  var total = totalRothContribMonthly;
+  let total = totalContribMonthly;
   for (i = 0; i < months; i++) {
-    total = (total * (1 + (returnRate / 12))) + totalRothContribMonthly;
+    total = (total * (1 + (par.returnRate / 12))) + totalContribMonthly;
   }
 
-  const result = "Total Savings at retirment: " + formatUSD(total) + "<br>"
-    + "Yearly contribution: " + formatUSD(rothContribYearly) + "<br>"
-    + "Monthly contribution: " + formatUSD(rothContribMonthly) + "<br>";
-  document.getElementById("roth-result").innerHTML = result;
-
-  // =====================================
-  // ========== total standard savigns calcs:
-  // + 0.01 a mere estimate of lowered tax
-  const stdContribYearly = income - (thAfterTaxContrib / (1 - taxRate + 0.01));
-  const totalStdContribYearly = stdContribYearly +
-    ((stdContribYearly < maxMatch) ? stdContribYearly : maxMatch);
-  const stdContribMonthly = stdContribYearly / 12;
-  const totalStdContribMonthly = totalStdContribYearly / 12;
-
-  var stdTotal = totalStdContribMonthly;
-  for (i = 0; i < months; i++) {
-    stdTotal = (stdTotal * (1 + (returnRate / 12))) + totalStdContribMonthly;
+  let exhaustAge = Infinity;
+  const initialInterest = total * par.returnRate / 12;
+  if (total * par.returnRate / 12 < par.thWithdrawal) {
+    let remaining = total;
+    let retireMonths = 0;
+    while (remaining > 0) {
+      remaining = (remaining * (1 + (par.returnRate / 12))) - par.thWithdrawal;
+      retireMonths++;
+    }
+    exhaustAge = (retireMonths / 12) + par.retAge;
   }
 
-  const stdResult = "Standard Total Savings at retirment: " + formatUSD(stdTotal) + "<br>"
-    + "Yearly contribution: " + formatUSD(stdContribYearly) + "<br>"
-    + "Monthly contribution: " + formatUSD(stdContribMonthly) + "<br>";
-  document.getElementById("std-result").innerHTML = stdResult;
+  setRowChildByID('total', 2, formatUSD(total));
+  setRowChildByID('yearlyContrib', 2, formatUSD(contribYearly));
+  setRowChildByID('monthlyContrib', 2, formatUSD(contribMonthly));
+  setRowChildByID('totalContrib', 2, formatUSD(months * contribMonthly));
+  setRowChildByID('initialInterest', 2, formatUSD(initialInterest));
+  setRowChildByID('runoutAge', 2, Number(exhaustAge).toFixed(2));
+  return total;
+}
 
-  document.getElementById("comparison").innerHTML =
-    "Total Savings Ratio: " + total / stdTotal;
+function setRowChildByID(id, childIdx, content) {
+  document.getElementById(id).children[childIdx].innerHTML = content;
 }
 
 function formatUSD(amount) {
@@ -70,3 +136,4 @@ function formatUSD(amount) {
 }
 
 // takehome = (income - contrib) * (1 - rate(income - contrib))
+initTable();
